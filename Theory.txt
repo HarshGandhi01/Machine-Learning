@@ -1,0 +1,199 @@
+PREPROCESSING MASTER CHECKLIST
+==============================
+
+STEP 1: QUICK SCAN
+------------------
+Run these two commands first:
+1. df.info()      -> checks data types and null counts
+2. df.describe()  -> checks statistics (min, max, mean)
+
+STEP 2: IDENTIFYING PROBLEMS & SOLUTIONS
+----------------------------------------
+
+A. MISSING VALUES (NaN/Null)
+   Why it's bad: Models cannot do math on empty space.
+   
+   WHAT TO LOOK FOR:
+   - Columns with non-zero "Null" counts in df.info()
+   
+   THE FIX:
+   - If missing rows are < 5% of data:
+     ACTION: Drop them.
+     SYNTAX: df.dropna()
+   
+   - If missing rows are significant:
+     ACTION (Numbers): Fill with Median (safe against outliers) or Mean.
+     SYNTAX: df['col'].fillna(df['col'].median(), inplace=True)
+     
+     ACTION (Text/Categories): Fill with Mode (most frequent item).
+     SYNTAX: df['col'].fillna(df['col'].mode()[0], inplace=True)
+
+B. TEXT DATA (Categorical) - **CRITICAL CHECK**
+   Why it's bad: Computers only understand numbers.
+   
+   WHAT TO LOOK FOR:
+   - Columns listed as 'object' or 'category'.
+   
+   THE CRITICAL DECISION (The "0.88 vs 0.98" Trap):
+   Ask yourself: "Does the order of these words matter?"
+   
+   - Scenario 1: NOMINAL (No Order) -> "Red", "Blue", "Green"
+     * Logic: Red is not "greater" than Blue.
+     * ACTION: One-Hot Encoding.
+     * SYNTAX: pd.get_dummies(df, columns=['color'], drop_first=True)
+   
+   - Scenario 2: ORDINAL (Ordered) -> "Fair", "Good", "Ideal"
+     * Logic: Ideal > Good > Fair.
+     * THE TRAP: If you One-Hot Encode this, the model forgets the rank. 
+       Your accuracy will drop significantly (e.g., 0.98 -> 0.88).
+     * ACTION: Manual Mapping (Best) or OrdinalEncoder.
+     * SYNTAX: 
+       mapping = {'Fair':1, 'Good':2, 'Ideal':3}
+       df['cut'] = df['cut'].map(mapping)
+
+C. SCALE DIFFERENCES
+   Why it's bad: If Salary is 50,000 and Age is 25, the model thinks Salary is 
+   2000x more important because the number is bigger.
+   
+   WHAT TO LOOK FOR:
+   - Compare 'mean' and 'max' in df.describe() across different columns.
+   
+   THE FIX:
+   - ACTION: Standard Scaling (brings everything to Mean=0, Variance=1).
+   - NOTE: Crucial for Linear Regression, KNN, SVM. Less critical for Trees.
+   
+D. OUTLIERS
+   Why it's bad: One billionaire in a neighborhood of normal houses skews the average.
+   
+   WHAT TO LOOK FOR:
+   - In df.describe(), look at the 'max'. Is it miles away from '75%'?
+     (e.g., 75% is 60, but max is 10,000).
+   
+   THE FIX:
+   - ACTION: Visual check with a Boxplot.
+   - DECISION: Remove the row OR cap the value to a maximum threshold.
+   - SYNTAX (Capping): 
+     limit = df['col'].quantile(0.99)
+     df['col'] = np.where(df['col'] > limit, limit, df['col'])
+
+     
+MODEL SELECTION & TUNING MASTER CHEATSHEET
+==========================================
+
+1. LINEAR REGRESSION
+--------------------
+   Type: Regression
+   [+] PROS: Explainable, fast, good baseline.
+   [-] CONS: Fails on curves (non-linear), sensitive to outliers.
+   
+   *** TUNING GUIDE ***
+   Standard Linear Regression has NO hyperparameters to tune. 
+   If you need to tune it, you must switch to "Ridge" or "Lasso" Regression.
+   
+   > GRID TO TRY: None (It is what it is).
+
+
+2. LOGISTIC REGRESSION
+----------------------
+   Type: Classification (Spam vs. Not Spam)
+   [+] PROS: Probabilities (0 to 1), simple, fast.
+   [-] CONS: Linear boundary only (cannot solve complex shapes).
+   
+   *** TUNING GUIDE ***
+   - C (Regularization): 
+     * Low (0.01): Strong penalty. Prevents overfitting but might underfit.
+     * High (100): Weak penalty. Fits training data very closely (risk of overfit).
+   - penalty: 'l1' (Lasso) or 'l2' (Ridge).
+   
+   > GRID TO TRY:
+     {'C': [0.01, 0.1, 1, 10, 100], 'penalty': ['l2']}
+
+
+3. DECISION TREES
+-----------------
+   Type: Regression & Classification
+   [+] PROS: Non-linear, no scaling needed, visual/explainable.
+   [-] CONS: High variance (overfits easily if not limited).
+   
+   *** TUNING GUIDE ***
+   - max_depth: How tall the tree can grow.
+     * None: Memorizes everything (Overfit).
+     * 5-10: Generalizes well.
+   - min_samples_split: Minimum samples needed to verify a "decision".
+     * Low (2): Catches every detail (Overfit).
+     * High (10+): Smoother model.
+   
+   > GRID TO TRY:
+     {'max_depth': [None, 5, 10, 20], 'min_samples_split': [2, 5, 10]}
+
+
+4. RANDOM FOREST (The "Safe Bet")
+---------------------------------
+   Type: Ensemble (Bagging)
+   [+] PROS: Robust, hard to overfit, accurate defaults.
+   [-] CONS: Slow training, black box.
+   
+   *** TUNING GUIDE ***
+   - n_estimators: Number of trees.
+     * Logic: More is always better, but slower. 100 is standard. 500 is robust.
+   - max_depth: Same as Decision Trees (limits complexity).
+   
+   > GRID TO TRY:
+     {'n_estimators': [100, 200, 500], 'max_depth': [None, 10, 20]}
+
+
+5. XGBOOST (The "Kaggle Winner")
+--------------------------------
+   Type: Ensemble (Boosting)
+   [+] PROS: Max performance, smart missing value handling.
+   [-] CONS: Hard to tune, prone to overfitting on small data.
+   
+   *** TUNING GUIDE ***
+   - learning_rate (eta): Step size.
+     * High (0.3): Fast learning, might miss the optimum.
+     * Low (0.01): Slow learning, very precise (needs more trees).
+   - n_estimators: Boosting rounds.
+     * If learning_rate is low, this must be high (1000+).
+   - subsample: % of data used per tree.
+     * 0.8 is a "sweet spot" to prevent overfitting.
+   
+   > GRID TO TRY:
+     {'n_estimators': [100, 500, 1000], 'learning_rate': [0.01, 0.05, 0.1], 'max_depth': [3, 5, 7]}
+
+
+6. SUPPORT VECTOR MACHINES (SVM)
+--------------------------------
+   Type: Classification & Regression
+   [+] PROS: Great for high dimensions (text/images) and complex boundaries.
+   [-] CONS: Slow on big data, scaling is mandatory.
+   
+   *** TUNING GUIDE ***
+   - C (Error Penalty):
+     * Low (0.1): Accepts some misclassifications (Smoother boundary).
+     * High (100): Strict. Wants 0 errors (Jagged boundary).
+   - kernel: The "shape" of the boundary.
+     * 'linear': Straight line.
+     * 'rbf': Curvy circles (default).
+   - gamma: How far the influence of a single point reaches.
+     * 'scale': The safe default.
+   
+   > GRID TO TRY:
+     {'C': [0.1, 1, 10, 100], 'kernel': ['linear', 'rbf'], 'gamma': ['scale', 'auto']}
+
+
+7. K-NEAREST NEIGHBORS (KNN)
+----------------------------
+   Type: Classification & Regression
+   [+] PROS: Simple, no training phase, effective on small data.
+   [-] CONS: Slow prediction, scaling is mandatory, sensitive to noise.
+   
+   *** TUNING GUIDE ***
+   - n_neighbors (k):
+     * Low (1): Very jagged. If you have 1 blue dot in a sea of red, it creates a blue island.
+     * High (20): Very smooth. It ignores small details.
+   - weights:
+     * 'uniform': All neighbors vote equally.
+     * 'distance': Closer neighbors count more (Good for uneven data).
+   
+   > GRID TO TRY:
+     {'n_neighbors': [3, 5, 7, 9, 11], 'weights': ['uniform', 'distance']}
